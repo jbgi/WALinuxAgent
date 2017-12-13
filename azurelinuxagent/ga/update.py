@@ -617,14 +617,17 @@ class UpdateHandler(object):
 
         self.last_attempt_time = now
         protocol = self.protocol_util.get_protocol()
+        last_state = 'begin'
 
         for update_goal_state in [False, True]:
             try:
                 if update_goal_state:
                     protocol.update_goal_state(forced=True)
 
+                last_state = 'update_goal_state'
                 manifest_list, etag = protocol.get_vmagent_manifests()
 
+                last_state = 'get_vmagent_manifests'
                 manifests = [m for m in manifest_list.vmAgentManifests \
                                 if m.family == family and \
                                     len(m.versionsManifestUris) > 0]
@@ -634,6 +637,7 @@ class UpdateHandler(object):
                     return False
 
                 pkg_list = protocol.get_vmagent_pkgs(manifests[0])
+                last_state = 'get_vmagent_pkgs'
 
                 # Set the agents to those available for download at least as
                 # current as the existing agent and remove from disk any agent
@@ -643,11 +647,18 @@ class UpdateHandler(object):
                 #  so as to preserve the state. Otherwise, those agents could be
                 #  again downloaded and inappropriately retried.
                 host = self._get_host_plugin(protocol=protocol)
+                last_state = 'get_host_plugin'
+
                 self._set_agents([GuestAgent(pkg=pkg, host=host) \
                                      for pkg in pkg_list.versions])
 
+                last_state = 'set_agents'
+
                 self._purge_agents()
+                last_state = 'purge_agents'
+
                 self._filter_blacklisted_agents()
+                last_state = 'filter_blacklisted_agents'
 
                 # Return True if current agent is no longer available or an
                 # agent with a higher version number is available
@@ -659,7 +670,8 @@ class UpdateHandler(object):
                 if isinstance(e, ResourceGoneError):
                     continue
 
-                msg = u"Exception retrieving agent manifests: {0}".format(
+                msg = u"Exception retrieving agent manifests ({0}): {1}".format(
+                            ustr(last_state),
                             ustr(e))
                 logger.warn(msg)
                 add_event(
